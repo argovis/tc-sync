@@ -1,6 +1,10 @@
 import sys, json, xarray, math, datetime
 from geopy import distance
 
+from pymongo import MongoClient
+client = MongoClient('mongodb://database/argo')
+db = client.argo
+
 def find_basin(lon, lat):
     # for a given lon, lat,
     # identify the basin from the lookup table.
@@ -85,10 +89,16 @@ with open(sys.argv[1]) as raw:
 		doc['data_keys'] = data_keys
 		doc['data'] = data
 
-
-		documents.append(doc)
+		# write to mongo
+		try:
+			db.tc.insert_one(doc)
+		except BaseException as err:
+			print('error: db write failure')
+			print(err)
+			print(doc)
+		# documents.append(doc)
 
 		record = raw.readline()
 
-out = open('out.json', 'w')
-json.dump(documents, out)
+# out = open('out.json', 'w')
+# json.dump(documents, out)
