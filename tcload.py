@@ -24,7 +24,7 @@ def find_basin(lon, lat):
         grids = [x for x in grids if not math.isnan(x[0])]
         if len(grids) == 0:
             # all points on land
-            print('warning: all surrounding basin grid points are NaN')
+            #print('warning: all surrounding basin grid points are NaN')
             basin = -1
         else:
             grids.sort(key=lambda tup: tup[1])
@@ -74,11 +74,11 @@ with open(sys.argv[1]) as raw:
 
 		data_keys = []
 		data = []
-		if 'wind' in doc:
+		if 'wind' in doc and doc['wind'] != 'NA':
 			data_keys.append('wind')
 			data.append(float(doc['wind']))
 			del doc['wind']
-		if 'press' in doc:
+		if 'press' in doc and doc['press'] != 'NA':
 			data_keys.append('press')
 			data.append(float(doc['press']))
 			del doc['press']
