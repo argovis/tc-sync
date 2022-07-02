@@ -4,6 +4,7 @@ from geopy import distance
 from pymongo import MongoClient
 client = MongoClient('mongodb://database/argo')
 db = client.argo
+loadtime = datetime.datetime.now()
 
 def find_basin(lon, lat):
     # for a given lon, lat,
@@ -46,52 +47,59 @@ with open(sys.argv[1]) as raw:
 	while record:
 		record = record.split(',')[1:]
 		record = [x.replace('"', '').replace('\n', '') for x in record]
-
 		# raw flat dict
-		doc = {header[i].lower():record[i].replace(' ', '') for i in range(len(header))}
+		row = {header[i].lower():record[i].replace(' ', '') for i in range(len(header))}
 
-		# drop redundants
-		del doc['date']
-		del doc['time']
-		del doc['season']
-
-		# renames & constructs
-		doc['record_identifier'] = doc['l'].replace(' ','')
-		del doc['l']
-
-		doc['_id'] = doc['id'] + '_' + doc['timestamp'].replace('-','').replace(' ','').replace(':', '')
-		del doc['id']
-
-		doc['basin'] = find_basin(float(doc['long']), float(doc['lat']))
-
-		doc['data_type'] = 'tropicalCyclone'
-
-		doc['date_updated_argovis'] = str(datetime.datetime.now())
-
-		doc['geolocation'] = {"type": "Point", "coordinates": [float(doc['long']), float(doc['lat'])]}
-
-		doc['source_info'] = {}
+		# construct metadata record
+		meta = {
+			'_id': row['id'],
+			'data_type': 'tropicalCyclone',
+			'data_keys': ['wind', 'pres'],
+			'units': ['kt', 'mb'],
+			'date_updated_argovis': loadtime,
+			'source': {},
+			'name': row['name'], 
+			'num': row['num']
+		}
 		if 'jtwc' in sys.argv[1].lower():
-			doc['source_info']['source'] = 'tc_jtwc'
+			meta['source']['source'] = 'tc_jtwc'
 		elif 'hurdat' in sys.argv[1].lower():
-			doc['source_info']['source'] = 'tc_hurdat'
-
-		data_keys = []
-		data = []
-		if 'wind' in doc and doc['wind'] != 'NA':
-			data_keys.append('wind')
-			data.append(float(doc['wind']))
-			del doc['wind']
-		if 'press' in doc and doc['press'] != 'NA':
-			data_keys.append('press')
-			data.append(float(doc['press']))
-			del doc['press']
-		doc['data_keys'] = data_keys
-		doc['data'] = data
+			meta['source']['source'] = 'tc_hurdat'
 
 		# write to mongo
 		try:
-			db.tc.insert_one(doc)
+			# each row that generates the same metadata record will overwrite the last;
+			# this is ok as long as whatever generates the _id field isn't degenerate when it shouldn't be,
+			# ie generates unique IDs for unique combinations of metadata.
+			db.tcMetax.replace_one({"_id": meta['_id']}, meta, upsert=True)
+		except BaseException as err:
+			print('error: db write failure')
+			print(err)
+			print(meta)
+
+		# construct data record
+		data = {
+			'_id': row['id'] + '_' + row['timestamp'].replace('-','').replace(' ','').replace(':', ''),
+			'metadata': row['id'],
+			'geolocation': {"type": "Point", "coordinates": [float(row['long']), float(row['lat'])]},
+			'basin': find_basin(float(row['long']), float(row['lat'])),
+			'timestamp': datetime.datetime.strptime(row['timestamp'],'%Y-%m-%d %H:%M:%S'),
+			'data': [[]],
+			'record_identifier': row['l'].replace(' ',''),
+			'class': row['class']
+		}
+		if row['wind'] != 'NA':
+			data['data'][0] = float(row['wind'])
+		else:
+			data['data'][0] = None
+		if row['press'] != 'NA':
+			data['data'][1] = float(row['press'])
+		else:
+			data['data'][1] = None
+
+		# write to mongo
+		try:
+			db.tcx.insert_one(data)
 		except BaseException as err:
 			print('error: db write failure')
 			print(err)
@@ -100,5 +108,3 @@ with open(sys.argv[1]) as raw:
 
 		record = raw.readline()
 
-# out = open('out.json', 'w')
-# json.dump(documents, out)
