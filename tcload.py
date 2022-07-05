@@ -57,14 +57,14 @@ with open(sys.argv[1]) as raw:
 			'data_keys': ['wind', 'pres'],
 			'units': ['kt', 'mb'],
 			'date_updated_argovis': loadtime,
-			'source': {},
+			'source': [{}],
 			'name': row['name'], 
-			'num': row['num']
+			'num': int(row['num'])
 		}
 		if 'jtwc' in sys.argv[1].lower():
-			meta['source']['source'] = 'tc_jtwc'
+			meta['source'][0]['source'] = ['tc_jtwc']
 		elif 'hurdat' in sys.argv[1].lower():
-			meta['source']['source'] = 'tc_hurdat'
+			meta['source'][0]['source'] = ['tc_hurdat']
 
 		# write to mongo
 		try:
@@ -83,19 +83,15 @@ with open(sys.argv[1]) as raw:
 			'metadata': row['id'],
 			'geolocation': {"type": "Point", "coordinates": [float(row['long']), float(row['lat'])]},
 			'basin': find_basin(float(row['long']), float(row['lat'])),
-			'timestamp': datetime.datetime.strptime(row['timestamp'],'%Y-%m-%d %H:%M:%S'),
-			'data': [[]],
+			'timestamp': datetime.datetime.strptime(row['timestamp'],'%Y-%m-%d%H:%M:%S'),
+			'data': [[None, None]],
 			'record_identifier': row['l'].replace(' ',''),
 			'class': row['class']
 		}
 		if row['wind'] != 'NA':
-			data['data'][0] = float(row['wind'])
-		else:
-			data['data'][0] = None
+			data['data'][0][0] = float(row['wind'])
 		if row['press'] != 'NA':
-			data['data'][1] = float(row['press'])
-		else:
-			data['data'][1] = None
+			data['data'][0][1] = float(row['press'])
 
 		# write to mongo
 		try:
@@ -104,7 +100,6 @@ with open(sys.argv[1]) as raw:
 			print('error: db write failure')
 			print(err)
 			print(doc)
-		# documents.append(doc)
 
 		record = raw.readline()
 
