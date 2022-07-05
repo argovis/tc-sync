@@ -71,7 +71,7 @@ with open(sys.argv[1]) as raw:
 			# each row that generates the same metadata record will overwrite the last;
 			# this is ok as long as whatever generates the _id field isn't degenerate when it shouldn't be,
 			# ie generates unique IDs for unique combinations of metadata.
-			db.tcMetax.replace_one({"_id": meta['_id']}, meta, upsert=True)
+			db.tcMeta.replace_one({"_id": meta['_id']}, meta, upsert=True)
 		except BaseException as err:
 			print('error: db write failure')
 			print(err)
@@ -95,7 +95,7 @@ with open(sys.argv[1]) as raw:
 
 		# write to mongo
 		try:
-			db.tcx.insert_one(data)
+			db.tc.insert_one(data)
 		except BaseException as err:
 			print('error: db write failure')
 			print(err)
