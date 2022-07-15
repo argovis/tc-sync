@@ -54,7 +54,7 @@ with open(sys.argv[1]) as raw:
 		meta = {
 			'_id': row['id'],
 			'data_type': 'tropicalCyclone',
-			'data_keys': ['wind', 'pres'],
+			'data_keys': ['wind', 'surface_pressure'],
 			'units': ['kt', 'mb'],
 			'date_updated_argovis': loadtime,
 			'source': [{}],
@@ -90,8 +90,8 @@ with open(sys.argv[1]) as raw:
 		}
 		if row['wind'] != 'NA':
 			data['data'][0][0] = float(row['wind'])
-		if row['press'] != 'NA':
-			data['data'][0][1] = float(row['press'])
+		if row['surface_pressure'] != 'NA':
+			data['data'][0][1] = float(row['surface_pressure'])
 
 		# write to mongo
 		try:
