@@ -90,8 +90,8 @@ with open(sys.argv[1]) as raw:
 		}
 		if row['wind'] != 'NA':
 			data['data'][0][0] = float(row['wind'])
-		if row['surface_pressure'] != 'NA':
-			data['data'][0][1] = float(row['surface_pressure'])
+		if row['press'] != 'NA':
+			data['data'][0][1] = float(row['press'])
 
 		# write to mongo
 		try:
