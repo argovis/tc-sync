@@ -2,7 +2,7 @@ FROM python:3.9
 
 RUN apt-get update -y
 RUN apt-get install -y nano jq
-RUN pip install nose pymongo numpy pandas xarray netcdf4 geopy
+RUN pip install nose pymongo numpy pandas xarray netcdf4 geopy requests
 
 WORKDIR /app
 COPY . .
