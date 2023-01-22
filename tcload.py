@@ -93,7 +93,7 @@ with open(sys.argv[1]) as raw:
 			data['data'][0][1] = float(row['press'])
 
 		# transpose tc.data
-		data['data'] = {['wind', 'surface_pressure'][i]: list(x) for i, x in enumerate(zip(*data['data']))}
+		data['data'] = [list(x) for i, x in enumerate(zip(*data['data']))]
 
 		# write to mongo
 		try:
