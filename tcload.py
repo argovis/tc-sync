@@ -54,7 +54,7 @@ with open(sys.argv[1]) as raw:
 		meta = {
 			'_id': row['id'],
 			'data_type': 'tropicalCyclone',
-			'measurement_metadata': [['wind', 'surface_pressure'], ['units'], [['kt'],['mb']]],
+			'data_info': [['wind', 'surface_pressure'], ['units'], [['kt'],['mb']]],
 			'date_updated_argovis': loadtime,
 			'source': [{}],
 			'name': row['name'], 
@@ -70,7 +70,7 @@ with open(sys.argv[1]) as raw:
 			# each row that generates the same metadata record will overwrite the last;
 			# this is ok as long as whatever generates the _id field isn't degenerate when it shouldn't be,
 			# ie generates unique IDs for unique combinations of metadata.
-			db.tcMeta.replace_one({"_id": meta['_id']}, meta, upsert=True)
+			db.tcMetax.replace_one({"_id": meta['_id']}, meta, upsert=True)
 		except BaseException as err:
 			print('error: db write failure')
 			print(err)
@@ -79,7 +79,7 @@ with open(sys.argv[1]) as raw:
 		# construct data record
 		data = {
 			'_id': row['id'] + '_' + row['timestamp'].replace('-','').replace(' ','').replace(':', ''),
-			'metadata': row['id'],
+			'metadata': [row['id']],
 			'geolocation': {"type": "Point", "coordinates": [float(row['long']), float(row['lat'])]},
 			'basin': find_basin(float(row['long']), float(row['lat'])),
 			'timestamp': datetime.datetime.strptime(row['timestamp'],'%Y-%m-%d%H:%M:%S'),
@@ -97,7 +97,7 @@ with open(sys.argv[1]) as raw:
 
 		# write to mongo
 		try:
-			db.tc.insert_one(data)
+			db.tcx.insert_one(data)
 		except BaseException as err:
 			print('error: db write failure')
 			print(err)
