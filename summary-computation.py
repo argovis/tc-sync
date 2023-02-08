@@ -15,6 +15,7 @@ agg = [
 ]
 
 tcs = list(db.tc.aggregate(agg))
+tcs = [{'_id': doc['_id'][0], 'label': doc['label']} for doc in tcs]
 
 try:
     db.summaries.replace_one({"_id": 'tc_labels'}, {"_id": 'tc_labels', "summary":tcs}, upsert=True)
@@ -22,3 +23,4 @@ except BaseException as err:
     print('error: db write failure')
     print(err)
     print(dacs)
+

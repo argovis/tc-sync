@@ -54,8 +54,7 @@ with open(sys.argv[1]) as raw:
 		meta = {
 			'_id': row['id'],
 			'data_type': 'tropicalCyclone',
-			'data_keys': ['wind', 'surface_pressure'],
-			'units': ['kt', 'mb'],
+			'data_info': [['wind', 'surface_pressure'], ['units'], [['kt'],['mb']]],
 			'date_updated_argovis': loadtime,
 			'source': [{}],
 			'name': row['name'], 
@@ -80,7 +79,7 @@ with open(sys.argv[1]) as raw:
 		# construct data record
 		data = {
 			'_id': row['id'] + '_' + row['timestamp'].replace('-','').replace(' ','').replace(':', ''),
-			'metadata': row['id'],
+			'metadata': [row['id']],
 			'geolocation': {"type": "Point", "coordinates": [float(row['long']), float(row['lat'])]},
 			'basin': find_basin(float(row['long']), float(row['lat'])),
 			'timestamp': datetime.datetime.strptime(row['timestamp'],'%Y-%m-%d%H:%M:%S'),
@@ -92,6 +91,9 @@ with open(sys.argv[1]) as raw:
 			data['data'][0][0] = float(row['wind'])
 		if row['press'] != 'NA':
 			data['data'][0][1] = float(row['press'])
+
+		# transpose tc.data
+		data['data'] = [list(x) for i, x in enumerate(zip(*data['data']))]
 
 		# write to mongo
 		try:
