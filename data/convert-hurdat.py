@@ -1,4 +1,4 @@
-# usage: python hurdat.py <original file name> <output filename>
+# usage: python convert-hurdat.py <original file name> <output filename>
 # see for example https://www.nhc.noaa.gov/data/hurdat/hurdat2-atl-1851-2023-042624.txt
 # and https://www.nhc.noaa.gov/data/hurdat/hurdat2-nepac-1949-2023-042624.txt
 # for upstream data.
