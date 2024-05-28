@@ -46,14 +46,14 @@ storms.reset_index(drop=True, inplace=True)
 storms['PRESS'] = storms['PRESS'].str.strip()
 storms['PRESS'] = storms['PRESS'].replace('-999', numpy.NaN)
 
-# Create 'SEASON' and 'NUM' columns
+# Create 'SEASON', 'NUM' and 'LINK' columns
 storms['SEASON'] = storms['ID'].str[4:8]
 storms['NUM'] = storms['ID'].str[2:4].astype(int)
+storms['LINK'] = 'https://www.nhc.noaa.gov/data/hurdat/' + sys.argv[1]
 
-# Convert 'DATE' to datetime and create 'TIMESTAMP' column
+# Convert 'DATE' to datetime
 storms['DATE'] = pd.to_datetime(storms['DATE'], format='%Y%m%d')
 storms['TIME'] = storms['TIME'].str.zfill(4)
-storms['TIMESTAMP'] = pd.to_datetime(storms['DATE'].astype(str) + ' ' + storms['TIME'])
 
 # Remove 'N' from 'LAT' and convert to numeric
 storms['LAT'] = storms['LAT'].str.replace('N', '').astype(float)
@@ -71,7 +71,7 @@ storms['L'] = storms['L'].str.strip()
 storms['CLASS'] = storms['CLASS'].str.strip()
 
 # preserve legacy column order for compatibility with downstream code
-column_order = ["ID","NAME","DATE","TIME","L","CLASS","LAT","LONG","WIND","PRESS","SEASON","NUM","TIMESTAMP"]
+column_order = ["ID","NAME","DATE","TIME","L","CLASS","LAT","LONG","WIND","PRESS","SEASON","NUM", "LINK"]
 storms = storms.reindex(columns=column_order)
 
 storms.to_csv(sys.argv[2], index=True)
