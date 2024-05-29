@@ -1,7 +1,10 @@
+# usage: python tcload.py <file produced by either data/convert-hurdat.py or data/convert-jtwc.py>
 import sys, json, xarray, math, datetime
 from geopy import distance
 
 from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError
+
 client = MongoClient('mongodb://database/argo')
 db = client.argo
 loadtime = datetime.datetime.now()
@@ -37,6 +40,27 @@ def find_basin(lon, lat):
     basins.close()
     return int(basin)
 
+def munge_timestamp(year, month, day, hour, minute):
+	# one record was indicated as being from October zeroth; catch, assume they meant the first, and add a warning
+	
+	data_warning = {}
+	try:
+		dt = datetime.datetime(int(year), int(month), int(day), int(hour), int(minute))
+	except ValueError:
+		if int(day) == 0:
+			dt = datetime.datetime(int(year), int(month), 1, int(hour))
+			data_warning['true_timestamp'] = [int(year), int(month), int(day), int(hour), int(minute)]
+		else:
+			print(ValueError)
+
+	return dt.strftime('%Y-%m-%d%H:%M:%S'), data_warning
+
+def remap_longitude(longitude):
+    longitude = longitude % 360
+    if longitude > 180:
+        longitude -= 360
+    return longitude
+
 with open(sys.argv[1]) as raw:
 
 	header = raw.readline().split(',')[1:] 				# split and drop first column
@@ -45,10 +69,12 @@ with open(sys.argv[1]) as raw:
 	record = raw.readline()
 	documents = []
 	while record:
+		data_warning = {}
 		record = record.split(',')[1:]
 		record = [x.replace('"', '').replace('\n', '') for x in record]
 		# raw flat dict
 		row = {header[i].lower():record[i].replace(' ', '') for i in range(len(header))}
+		row['timestamp'], data_warning = munge_timestamp(row['date'][0:4], row['date'][5:7], row['date'][8:10], int(row['time'][0:2]), int(row['time'][2:4]))
 
 		# construct metadata record
 		meta = {
@@ -56,7 +82,7 @@ with open(sys.argv[1]) as raw:
 			'data_type': 'tropicalCyclone',
 			'data_info': [['wind', 'surface_pressure'], ['units'], [['kt'],['mb']]],
 			'date_updated_argovis': loadtime,
-			'source': [{}],
+			'source': [{"url": row['link']}],
 			'name': row['name'], 
 			'num': int(row['num'])
 		}
@@ -78,30 +104,50 @@ with open(sys.argv[1]) as raw:
 
 		# construct data record
 		data = {
-			'_id': row['id'] + '_' + row['timestamp'].replace('-','').replace(' ','').replace(':', ''),
+			'_id': str(row['id']) + '_' + row['timestamp'].replace('-','').replace(' ','').replace(':', ''),
 			'metadata': [row['id']],
-			'geolocation': {"type": "Point", "coordinates": [float(row['long']), float(row['lat'])]},
-			'basin': find_basin(float(row['long']), float(row['lat'])),
+			'geolocation': {"type": "Point", "coordinates": [remap_longitude(float(row['long'])), float(row['lat'])]},
+			'basin': find_basin(remap_longitude(float(row['long'])), float(row['lat'])),
 			'timestamp': datetime.datetime.strptime(row['timestamp'],'%Y-%m-%d%H:%M:%S'),
 			'data': [[None, None]],
 			'record_identifier': row['l'].replace(' ',''),
 			'class': row['class']
 		}
 		if row['wind'] != 'NA':
-			data['data'][0][0] = float(row['wind'])
+			if row['wind'] == '':
+				data['data'][0][0] = None
+			else:
+				data['data'][0][0] = float(row['wind'])
 		if row['press'] != 'NA':
-			data['data'][0][1] = float(row['press'])
+			if row['press'] == '':
+				data['data'][0][1] = None
+			else:
+				data['data'][0][1] = float(row['press'])
+		if len(list(data_warning.keys())) > 0:
+			data['data_warning'] = data_warning
 
 		# transpose tc.data
 		data['data'] = [list(x) for i, x in enumerate(zip(*data['data']))]
 
 		# write to mongo
+
 		try:
 			db.tc.insert_one(data)
+		except DuplicateKeyError:
+			# duplicate ID; keep the original with a flag
+			doc = db.tc.find_one({'_id': data['_id']})
+			if 'data_warning' in doc:
+				if 'duplicate' in doc['data_warning']:
+					doc['data_warning']['duplicate'].append(row['link'])
+				else:
+					doc['data_warning']['duplicate'] = [row['link']]
+			else:
+				doc['data_warning'] = {'duplicate': [row['link']]}
+			db.tc.replace_one({'_id': data['_id']}, doc)
 		except BaseException as err:
 			print('error: db write failure')
 			print(err)
-			print(doc)
+			print(data)
 
 		record = raw.readline()
 
