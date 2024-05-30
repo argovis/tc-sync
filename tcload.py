@@ -91,17 +91,6 @@ with open(sys.argv[1]) as raw:
 		elif 'hurdat' in sys.argv[1].lower():
 			meta['source'][0]['source'] = ['tc_hurdat']
 
-		# write to mongo
-		try:
-			# each row that generates the same metadata record will overwrite the last;
-			# this is ok as long as whatever generates the _id field isn't degenerate when it shouldn't be,
-			# ie generates unique IDs for unique combinations of metadata.
-			db.tcMeta.replace_one({"_id": meta['_id']}, meta, upsert=True)
-		except BaseException as err:
-			print('error: db write failure')
-			print(err)
-			print(meta)
-
 		# construct data record
 		data = {
 			'_id': str(row['id']) + '_' + row['timestamp'].replace('-','').replace(' ','').replace(':', ''),
@@ -109,7 +98,7 @@ with open(sys.argv[1]) as raw:
 			'geolocation': {"type": "Point", "coordinates": [remap_longitude(float(row['long'])), float(row['lat'])]},
 			'basin': find_basin(remap_longitude(float(row['long'])), float(row['lat'])),
 			'timestamp': datetime.datetime.strptime(row['timestamp'],'%Y-%m-%d%H:%M:%S'),
-			'data': [[None, None]],
+			'data': [[None], [None]],
 			'record_identifier': row['l'].replace(' ',''),
 			'class': row['class']
 		}
@@ -120,34 +109,48 @@ with open(sys.argv[1]) as raw:
 				data['data'][0][0] = float(row['wind'])
 		if row['press'] != 'NA':
 			if row['press'] == '':
-				data['data'][0][1] = None
+				data['data'][1][0] = None
 			else:
-				data['data'][0][1] = float(row['press'])
+				data['data'][1][0] = float(row['press'])
 		if len(list(data_warning.keys())) > 0:
 			data['data_warning'] = data_warning
 
-		# transpose tc.data
-		data['data'] = [list(x) for i, x in enumerate(zip(*data['data']))]
-
-		# write to mongo
-
-		try:
-			db.tc.insert_one(data)
-		except DuplicateKeyError:
-			# duplicate ID; keep the original with a flag
-			doc = db.tc.find_one({'_id': data['_id']})
-			if 'data_warning' in doc:
-				if 'duplicate' in doc['data_warning']:
-					doc['data_warning']['duplicate'].append(row['link'])
+		if data['data'] == [[None], [None]]:
+			pass
+		else:
+			# write to mongo
+			## metadata write
+			try:
+				db.tcMeta.insert_one(meta)
+			except DuplicateKeyError:
+				# there are some instances where a storm IDed in one year is found in the zip archive of another year
+				existing_meta = db.tcMeta.find_one({'_id': meta['_id']})
+				urls = [x['url'] for x in existing_meta['source']]
+				if row['link'] not in urls:
+					existing_meta['source'].append(meta['source'][0])
+					db.tcMeta.replace_one({'_id': meta['_id']}, existing_meta)
+			except BaseException as err:
+				print('error: meta db write failure')
+				print(err)
+				print(meta)
+			## data write
+			try:
+				db.tc.insert_one(data)
+			except DuplicateKeyError:
+				# duplicate ID; keep the original with a flag
+				doc = db.tc.find_one({'_id': data['_id']})
+				if 'data_warning' in doc:
+					if 'duplicate' in doc['data_warning']:
+						doc['data_warning']['duplicate'].append(row['link'])
+					else:
+						doc['data_warning']['duplicate'] = [row['link']]
 				else:
-					doc['data_warning']['duplicate'] = [row['link']]
-			else:
-				doc['data_warning'] = {'duplicate': [row['link']]}
-			db.tc.replace_one({'_id': data['_id']}, doc)
-		except BaseException as err:
-			print('error: db write failure')
-			print(err)
-			print(data)
+					doc['data_warning'] = {'duplicate': [row['link']]}
+				db.tc.replace_one({'_id': data['_id']}, doc)
+			except BaseException as err:
+				print('error: data db write failure')
+				print(err)
+				print(data)
 
 		record = raw.readline()
 

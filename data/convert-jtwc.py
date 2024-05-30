@@ -4,7 +4,7 @@
 # and https://www.metoc.navy.mil/jtwc/jtwc.html?western-pacific
 # for upstream data.
 
-import os, sys
+import os, sys, glob
 import numpy as np
 import pandas as pd
 
@@ -68,7 +68,7 @@ def try_get(func, r):
     try:
         return func(r)
     except:
-        print(r)
+        print(r['LINK'])
         return 0xDEADBEEF
 
 def parse_filename(name):
@@ -76,9 +76,8 @@ def parse_filename(name):
     if region_prefix == 'bcp':
         region_prefix = 'bwp' # a few files unpack as bcp, but the upstrem zip files are all labeled bwp
     storm_number = name[3:5]
-    year = name[5:9]
 
-    return region_prefix, storm_number, year
+    return region_prefix, storm_number
 
 def convert_df(df):
     n, _ = df.shape
@@ -101,34 +100,40 @@ def convert_df(df):
 
     return df
 
-
 df_lst = []
 dr = sys.argv[1]
-for fn in os.listdir(dr):
-    if fn[-3:] == 'txt' or fn[-3:] == 'dat':
-        with open(dr+fn, 'r') as file:
-            for line in file:
-                # Split the line
-                row = line.strip().split(',')
-                row = [x.strip() for x in row]
-                # If there are less than 28 columns, fill the missing ones with None
-                # then drop extra stuff
-                row += [None] * (28 - len(row))
-                row = row[:28]
-                # add an appropriate filename
-                region_prefix, storm_number, storm_year = parse_filename(fn)
-                row.append(f'https://www.metoc.navy.mil/jtwc/products/best-tracks/{storm_year}/{storm_year}s-{region_prefix}/{region_prefix}{storm_year}.zip')
-                # Append the row to df_lst
-                df_lst.append(row)
+zip_files = glob.glob(dr + '*.zip')
 
-# Convert df_lst to a DataFrame
-raw = pd.DataFrame(df_lst, columns=['BASIN', 'CY', 'DATE', 'TECHNUM', 'TECH', 'TAU', 'LAT', 'LON', 'VMAX', 'MSLP', 'CLASS', 'RAD' , 'WINDCODE' , 'RAD1' , 'RAD2' , 'RAD3' , 'RAD4' , 'RADP' , 'RRP' , 'MRD' , 'GUSTS' , 'EYE' , 'SUBREGN' , 'MAXSEAS' , 'INITIALS' , 'DIR' , 'SPEED' , 'STORMNAME', 'LINK'])
-# Replace empty strings with None
-raw.replace("", None, inplace=True)
-raw['VMAX'] = raw['VMAX'].replace('-999', None)
-raw['MSLP'] = raw['MSLP'].replace('-999', None)
-# perform conversion
-df = convert_df(raw)
+for zip in zip_files:
+    os.system(f'unzip {zip} -d {dr} > /dev/null')
 
-df.to_csv(sys.argv[2], index=True)
+    for fn in os.listdir(dr):
+        if (fn[-3:] == 'txt' or fn[-3:] == 'dat') and fn[0] == 'b': # there's an errated in the west pacific's 1996 file we need to skip here
+            with open(dr+fn, 'r') as file:
+                for line in file:
+                    # Split the line
+                    row = line.strip().split(',')
+                    row = [x.strip() for x in row]
+                    # If there are less than 28 columns, fill the missing ones with None
+                    # then drop extra stuff
+                    row += [None] * (28 - len(row))
+                    row = row[:28]
+                    # add an appropriate filename
+                    region_prefix, storm_number = parse_filename(fn)
+                    archive_year = zip.split('/')[-1][3:7]
+                    row.append(f'https://www.metoc.navy.mil/jtwc/products/best-tracks/{archive_year}/{archive_year}s-{region_prefix}/{region_prefix}{archive_year}.zip')
+                    # Append the row to df_lst
+                    df_lst.append(row)
+            os.remove(dr+fn)
+
+    # Convert df_lst to a DataFrame
+    raw = pd.DataFrame(df_lst, columns=['BASIN', 'CY', 'DATE', 'TECHNUM', 'TECH', 'TAU', 'LAT', 'LON', 'VMAX', 'MSLP', 'CLASS', 'RAD' , 'WINDCODE' , 'RAD1' , 'RAD2' , 'RAD3' , 'RAD4' , 'RADP' , 'RRP' , 'MRD' , 'GUSTS' , 'EYE' , 'SUBREGN' , 'MAXSEAS' , 'INITIALS' , 'DIR' , 'SPEED' , 'STORMNAME', 'LINK'])
+    # Replace empty strings with None
+    raw.replace("", None, inplace=True)
+    raw['VMAX'] = raw['VMAX'].replace('-999', None)
+    raw['MSLP'] = raw['MSLP'].replace('-999', None)
+    # perform conversion
+    df = convert_df(raw)
+
+    df.to_csv(sys.argv[2], index=True)
 
