@@ -41,7 +41,7 @@ def jtwc_munge_lat(lat):
 		compass = 'N'
 	else:
 		compass = 'S'
-	return f"{int(abs(lat)*10)}{compass}"
+	return f"{int(abs(lat)*10)}{compass}" 
 
 def jtwc_munge_lon(lon):
 	compass = None
@@ -119,7 +119,7 @@ while True:
 		jtwcstring += doc['_id'][2:4] + ', '
 		jtwcstring += doc['_id'].split('_')[1][0:10] + ','
 		jtwcstring += '...,.....,....,'
-		jtwcstring += jtwc_munge_lat(doc['geolocation']['coordinates'][1]).rjust(5) + ','
+		jtwcstring += '[\s0]*' + jtwc_munge_lat(doc['geolocation']['coordinates'][1]) + ',' # sometimes ' ' padded, sometimes 0 padded...
 		jtwcstring += jtwc_munge_lon(doc['geolocation']['coordinates'][0]).rjust(6) + ','
 		jtwcstring += '\s*' + str(int(doc['data'][0][0])) if doc['data'][0][0] is not None else '-999' # usually padded to 4 spaces, sometimes 3
 		if doc['data'][1][0] is not None:
@@ -134,6 +134,7 @@ while True:
 		for n in metadata_doc['source']:
 			url = n['url']
 			filename = url.split('/')[-1]
+			print(url)
 			urllib.request.urlretrieve(url, os.path.join(output_dir, filename))
 			# Extract the file
 			os.system(f"unzip -o {output_dir}/{filename} -d {output_dir} > /dev/null 2>&1")

@@ -17,7 +17,7 @@ spec:
     volumeMounts:
       - mountPath: "/tmp"
         name: tc
-    command: ['sleep', '100000000']
+    #command: ['sleep', '100000000']
     command: ['bash', 'parseall.sh']
     resources:
       requests:
@@ -25,5 +25,5 @@ spec:
         cpu: "0m"
       limits:
         memory: 100Mi
-        cpu: 100m
+        cpu: 1000m
   restartPolicy: Never

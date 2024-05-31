@@ -40,20 +40,12 @@ def find_basin(lon, lat):
     basins.close()
     return int(basin)
 
-def munge_timestamp(year, month, day, hour, minute):
-	# one record was indicated as being from October zeroth; catch, assume they meant the first, and add a warning
-	
-	data_warning = {}
+def munge_timestamp(year, month, day, hour, minute):	
 	try:
 		dt = datetime.datetime(int(year), int(month), int(day), int(hour), int(minute))
+		return dt.strftime('%Y-%m-%d%H:%M:%S')
 	except ValueError:
-		if int(day) == 0:
-			dt = datetime.datetime(int(year), int(month), 1, int(hour))
-			data_warning['true_timestamp'] = [int(year), int(month), int(day), int(hour), int(minute)]
-		else:
-			print(ValueError)
-
-	return dt.strftime('%Y-%m-%d%H:%M:%S'), data_warning
+		return {'error': 'CRITICAL: invalid date/time format'}
 
 def remap_longitude(longitude):
     longitude = longitude % 360
@@ -69,12 +61,17 @@ with open(sys.argv[1]) as raw:
 	record = raw.readline()
 	documents = []
 	while record:
-		data_warning = {}
 		record = record.split(',')[1:]
 		record = [x.replace('"', '').replace('\n', '') for x in record]
 		# raw flat dict
 		row = {header[i].lower():record[i].replace(' ', '') for i in range(len(header))}
-		row['timestamp'], data_warning = munge_timestamp(row['date'][0:4], row['date'][5:7], row['date'][8:10], int(row['time'][0:2]), int(row['time'][2:4]))
+		timestamp = munge_timestamp(row['date'][0:4], row['date'][5:7], row['date'][8:10], int(row['time'][0:2]), int(row['time'][2:4]))
+		if 'error' in timestamp:
+			# skip records with nonsense timestamps
+			print(timestamp['error'], record)
+			record = raw.readline()
+			continue
+		row['timestamp'] = munge_timestamp(row['date'][0:4], row['date'][5:7], row['date'][8:10], int(row['time'][0:2]), int(row['time'][2:4]))
 
 		# construct metadata record
 		meta = {
@@ -103,17 +100,20 @@ with open(sys.argv[1]) as raw:
 			'class': row['class']
 		}
 		if row['wind'] != 'NA':
-			if row['wind'] == '':
+			# assuming for now that zeroes are nulls.
+			if row['wind'] == '' or float(row['wind']) == 0:
 				data['data'][0][0] = None
+				if row['wind'] != '' and float(row['wind']) == 0:
+					print('WARNING: assumed 0 is null for wind', record)
 			else:
 				data['data'][0][0] = float(row['wind'])
 		if row['press'] != 'NA':
-			if row['press'] == '':
+			if row['press'] == '' or float(row['press']) == 0:
 				data['data'][1][0] = None
+				if row['press'] != '' and float(row['press']) == 0:
+					print('WARNING: assumed 0 is null for press', record)
 			else:
 				data['data'][1][0] = float(row['press'])
-		if len(list(data_warning.keys())) > 0:
-			data['data_warning'] = data_warning
 
 		if data['data'] == [[None], [None]]:
 			pass
@@ -121,24 +121,24 @@ with open(sys.argv[1]) as raw:
 			# write to mongo
 			## metadata write
 			try:
-				db.tcMeta.insert_one(meta)
+				db.tcMeta_stage.insert_one(meta)
 			except DuplicateKeyError:
 				# there are some instances where a storm IDed in one year is found in the zip archive of another year
-				existing_meta = db.tcMeta.find_one({'_id': meta['_id']})
+				existing_meta = db.tcMeta_stage.find_one({'_id': meta['_id']})
 				urls = [x['url'] for x in existing_meta['source']]
 				if row['link'] not in urls:
 					existing_meta['source'].append(meta['source'][0])
-					db.tcMeta.replace_one({'_id': meta['_id']}, existing_meta)
+					db.tcMeta_stage.replace_one({'_id': meta['_id']}, existing_meta)
 			except BaseException as err:
 				print('error: meta db write failure')
 				print(err)
 				print(meta)
 			## data write
 			try:
-				db.tc.insert_one(data)
+				db.tc_stage.insert_one(data)
 			except DuplicateKeyError:
 				# duplicate ID; keep the original with a flag
-				doc = db.tc.find_one({'_id': data['_id']})
+				doc = db.tc_stage.find_one({'_id': data['_id']})
 				if 'data_warning' in doc:
 					if 'duplicate' in doc['data_warning']:
 						doc['data_warning']['duplicate'].append(row['link'])
@@ -146,7 +146,7 @@ with open(sys.argv[1]) as raw:
 						doc['data_warning']['duplicate'] = [row['link']]
 				else:
 					doc['data_warning'] = {'duplicate': [row['link']]}
-				db.tc.replace_one({'_id': data['_id']}, doc)
+				db.tc_stage.replace_one({'_id': data['_id']}, doc)
 			except BaseException as err:
 				print('error: data db write failure')
 				print(err)

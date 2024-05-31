@@ -83,10 +83,10 @@ def convert_df(df):
     n, _ = df.shape
     df = pd.DataFrame({
         'ID':       df.apply(lambda r: try_get(getID, r), axis=1),           # ID
-        'NAME':     df.apply(lambda r: try_get(getName, r), axis=1),                # NAME
+        'NAME':     df.apply(lambda r: try_get(getName, r), axis=1),         # NAME
         'DATE':     df.apply(lambda r: try_get(getDate, r), axis=1),         # DATE
         'TIME':     df.apply(lambda r: try_get(getTime, r), axis=1),         # TIME
-        'L':        ['  ' for _ in range(n)],                       # L
+        'L':        ['  ' for _ in range(n)],                                # L
         'CLASS':    df.apply(lambda r: try_get(getClass, r), axis=1),        # CLASS
         'LAT':      df.apply(lambda r: try_get(getLat, r), axis=1),          # LAT
         'LONG':     df.apply(lambda r: try_get(getLon, r), axis=1),          # LONG
@@ -108,7 +108,7 @@ for zip in zip_files:
     os.system(f'unzip {zip} -d {dr} > /dev/null')
 
     for fn in os.listdir(dr):
-        if (fn[-3:] == 'txt' or fn[-3:] == 'dat') and fn[0] == 'b': # there's an errated in the west pacific's 1996 file we need to skip here
+        if (fn[-3:] == 'txt' or fn[-3:] == 'dat') and fn[0] == 'b': # there's an errata in the west pacific's 1996 file we need to skip here
             with open(dr+fn, 'r') as file:
                 for line in file:
                     # Split the line
