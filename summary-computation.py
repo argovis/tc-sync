@@ -14,7 +14,7 @@ agg = [
     {'$sort': {'label':1}}
 ]
 
-tcs = list(db.tc.aggregate(agg))
+tcs = list(db.tc_stage.aggregate(agg))
 tcs = [{'_id': doc['_id'][0], 'label': doc['label']} for doc in tcs]
 
 try:

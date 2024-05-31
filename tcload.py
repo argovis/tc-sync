@@ -1,7 +1,10 @@
+# usage: python tcload.py <file produced by either data/convert-hurdat.py or data/convert-jtwc.py>
 import sys, json, xarray, math, datetime
 from geopy import distance
 
 from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError
+
 client = MongoClient('mongodb://database/argo')
 db = client.argo
 loadtime = datetime.datetime.now()
@@ -37,6 +40,19 @@ def find_basin(lon, lat):
     basins.close()
     return int(basin)
 
+def munge_timestamp(year, month, day, hour, minute):	
+	try:
+		dt = datetime.datetime(int(year), int(month), int(day), int(hour), int(minute))
+		return dt.strftime('%Y-%m-%d%H:%M:%S')
+	except ValueError:
+		return {'error': 'CRITICAL: invalid date/time format'}
+
+def remap_longitude(longitude):
+    longitude = longitude % 360
+    if longitude > 180:
+        longitude -= 360
+    return longitude
+
 with open(sys.argv[1]) as raw:
 
 	header = raw.readline().split(',')[1:] 				# split and drop first column
@@ -49,6 +65,13 @@ with open(sys.argv[1]) as raw:
 		record = [x.replace('"', '').replace('\n', '') for x in record]
 		# raw flat dict
 		row = {header[i].lower():record[i].replace(' ', '') for i in range(len(header))}
+		timestamp = munge_timestamp(row['date'][0:4], row['date'][5:7], row['date'][8:10], int(row['time'][0:2]), int(row['time'][2:4]))
+		if 'error' in timestamp:
+			# skip records with nonsense timestamps
+			print(timestamp['error'], record)
+			record = raw.readline()
+			continue
+		row['timestamp'] = munge_timestamp(row['date'][0:4], row['date'][5:7], row['date'][8:10], int(row['time'][0:2]), int(row['time'][2:4]))
 
 		# construct metadata record
 		meta = {
@@ -56,7 +79,7 @@ with open(sys.argv[1]) as raw:
 			'data_type': 'tropicalCyclone',
 			'data_info': [['wind', 'surface_pressure'], ['units'], [['kt'],['mb']]],
 			'date_updated_argovis': loadtime,
-			'source': [{}],
+			'source': [{"url": row['link']}],
 			'name': row['name'], 
 			'num': int(row['num'])
 		}
@@ -65,43 +88,69 @@ with open(sys.argv[1]) as raw:
 		elif 'hurdat' in sys.argv[1].lower():
 			meta['source'][0]['source'] = ['tc_hurdat']
 
-		# write to mongo
-		try:
-			# each row that generates the same metadata record will overwrite the last;
-			# this is ok as long as whatever generates the _id field isn't degenerate when it shouldn't be,
-			# ie generates unique IDs for unique combinations of metadata.
-			db.tcMeta.replace_one({"_id": meta['_id']}, meta, upsert=True)
-		except BaseException as err:
-			print('error: db write failure')
-			print(err)
-			print(meta)
-
 		# construct data record
 		data = {
-			'_id': row['id'] + '_' + row['timestamp'].replace('-','').replace(' ','').replace(':', ''),
+			'_id': str(row['id']) + '_' + row['timestamp'].replace('-','').replace(' ','').replace(':', ''),
 			'metadata': [row['id']],
-			'geolocation': {"type": "Point", "coordinates": [float(row['long']), float(row['lat'])]},
-			'basin': find_basin(float(row['long']), float(row['lat'])),
+			'geolocation': {"type": "Point", "coordinates": [remap_longitude(float(row['long'])), float(row['lat'])]},
+			'basin': find_basin(remap_longitude(float(row['long'])), float(row['lat'])),
 			'timestamp': datetime.datetime.strptime(row['timestamp'],'%Y-%m-%d%H:%M:%S'),
-			'data': [[None, None]],
+			'data': [[None], [None]],
 			'record_identifier': row['l'].replace(' ',''),
 			'class': row['class']
 		}
 		if row['wind'] != 'NA':
-			data['data'][0][0] = float(row['wind'])
+			# assuming for now that zeroes are nulls.
+			if row['wind'] == '' or float(row['wind']) == 0:
+				data['data'][0][0] = None
+				if row['wind'] != '' and float(row['wind']) == 0:
+					print('WARNING: assumed 0 is null for wind', record)
+			else:
+				data['data'][0][0] = float(row['wind'])
 		if row['press'] != 'NA':
-			data['data'][0][1] = float(row['press'])
+			if row['press'] == '' or float(row['press']) == 0:
+				data['data'][1][0] = None
+				if row['press'] != '' and float(row['press']) == 0:
+					print('WARNING: assumed 0 is null for press', record)
+			else:
+				data['data'][1][0] = float(row['press'])
 
-		# transpose tc.data
-		data['data'] = [list(x) for i, x in enumerate(zip(*data['data']))]
-
-		# write to mongo
-		try:
-			db.tc.insert_one(data)
-		except BaseException as err:
-			print('error: db write failure')
-			print(err)
-			print(doc)
+		if data['data'] == [[None], [None]]:
+			pass
+		else:
+			# write to mongo
+			## metadata write
+			try:
+				db.tcMeta_stage.insert_one(meta)
+			except DuplicateKeyError:
+				# there are some instances where a storm IDed in one year is found in the zip archive of another year
+				existing_meta = db.tcMeta_stage.find_one({'_id': meta['_id']})
+				urls = [x['url'] for x in existing_meta['source']]
+				if row['link'] not in urls:
+					existing_meta['source'].append(meta['source'][0])
+					db.tcMeta_stage.replace_one({'_id': meta['_id']}, existing_meta)
+			except BaseException as err:
+				print('error: meta db write failure')
+				print(err)
+				print(meta)
+			## data write
+			try:
+				db.tc_stage.insert_one(data)
+			except DuplicateKeyError:
+				# duplicate ID; keep the original with a flag
+				doc = db.tc_stage.find_one({'_id': data['_id']})
+				if 'data_warning' in doc:
+					if 'duplicate' in doc['data_warning']:
+						doc['data_warning']['duplicate'].append(row['link'])
+					else:
+						doc['data_warning']['duplicate'] = [row['link']]
+				else:
+					doc['data_warning'] = {'duplicate': [row['link']]}
+				db.tc_stage.replace_one({'_id': data['_id']}, doc)
+			except BaseException as err:
+				print('error: data db write failure')
+				print(err)
+				print(data)
 
 		record = raw.readline()
 
