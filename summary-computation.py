@@ -66,5 +66,21 @@ else:
 try:        
     db.summaries.replace_one({"_id": 'ratelimiter'}, rldoc, upsert=True)
 except BaseException as err:
-    print('error: db write failure')
+    print('error: db write failure - ratelimiter')
+    print(err)
+
+# generic metadata summary
+tcGenericMeta={
+    "_id":"tcGenericMeta",
+    "data_info":[
+        ["wind","surface_pressure"],
+        ["units"],
+        [["kt"],["mb"]]
+    ]
+}
+
+try:
+    db.summaries.replace_one({"_id": 'tcGenericMeta'}, tcGenericMeta, upsert=True)
+except BaseException as err:
+    print('error: db write failure - generic meta')
     print(err)
